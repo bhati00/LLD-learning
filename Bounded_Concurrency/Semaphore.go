@@ -5,9 +5,9 @@ import (
 	"sync"
 )
 
-func SemaphorePattern[T any, R any](ctx context.Context, n int, items []T, fn func(context.Context, T) (R, error)) ([]R, error) {
+func SemaphorePattern[T any, R any](ctx context.Context, worker int, items []T, fn func(context.Context, T) (R, error)) ([]R, error) {
 
-	sema := make(chan struct{}, n)
+	sema := make(chan struct{}, worker)
 	output := make([]R, len(items))
 	var firstErr error
 	ctx, cancel := context.WithCancel(ctx)

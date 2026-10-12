@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func main() {
+func TestSemaphore() {
 	items := []int{1, 2, 3, 4, 5, 6}
 
 	// Happy path: at most 2 tasks should overlap.
@@ -34,4 +34,25 @@ func main() {
 			}
 		})
 	fmt.Println(res, err)
+
+}
+
+func TestWorkerPool() {
+	items := []int{1, 2, 3, 4, 5, 6}
+	res, err := WorkerPool(context.Background(), 2, items,
+		func(ctx context.Context, x int) (int, error) {
+			if x == 3 {
+				return 0, errors.New("boom")
+			}
+			select {
+			case <-time.After(100 * time.Millisecond):
+				return x, nil
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			}
+		})
+	fmt.Println(res, err)
+}
+func main() {
+	TestWorkerPool()
 }
