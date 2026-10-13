@@ -18,8 +18,8 @@
 | Design Patterns | [Pipeline pattern](DESIGN-PATTERNS/09-Pipeline.md) | |
 | Design Patterns | [Worker Pool pattern](DESIGN-PATTERNS/10-Worker-Pool.md) | |
 | Concurrency Exercises | Bounded parallel processor | |
-| Concurrency Exercises | Fan-in multiplexer | |
-| Concurrency Exercises | Object pool with sync.Pool | |
+| Concurrency Exercises | [Fan-in multiplexer](Fan_In_Multiplexer/01-Fan-In-Multiplexer.md) | |
+| Concurrency Exercises | [Object pool with sync.Pool](Object_Pool/01-Object-Pool-sync-Pool.md) | |
 | LLD Problems | Task Management System | |
 | LLD Problems | In-memory LRU Cache | |
 | LLD Problems | Rate Limiter | |
