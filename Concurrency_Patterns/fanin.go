@@ -1,4 +1,4 @@
-package faninmultiplexer
+package main
 
 import (
 	"context"
