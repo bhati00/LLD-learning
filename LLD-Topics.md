@@ -22,7 +22,7 @@
 | Concurrency Exercises | [Object pool with sync.Pool](Object_Pool/01-Object-Pool-sync-Pool.md) | |
 | LLD Problems | Task Management System | |
 | LLD Problems | In-memory LRU Cache | |
-| LLD Problems | Rate Limiter | |
+| LLD Problems | [Rate Limiter](LLD-PROBLEMS/Rate_Limiter/01-Rate-Limiter.md) | |
 | LLD Problems | Logger Service | |
 | LLD Problems | Worker Pool | |
 | LLD Problems | Pub/Sub System | |
