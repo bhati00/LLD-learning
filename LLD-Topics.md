@@ -25,7 +25,7 @@
 | LLD Problems | [Rate Limiter](LLD-PROBLEMS/Rate_Limiter/01-Rate-Limiter.md) | |
 | LLD Problems | Logger Service | |
 | LLD Problems | Worker Pool | |
-| LLD Problems | Pub/Sub System | |
+| LLD Problems | [Pub/Sub System](LLD-PROBLEMS/Pub_Sub/01-Pub-Sub-System.md) | |
 | LLD Problems | Parking Lot | |
 | LLD Problems | Splitwise | |
 | LLD Problems | Vending Machine | |
