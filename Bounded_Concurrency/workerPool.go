@@ -2,38 +2,52 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
+/*
+!SECTION
+FLOW : we run n workers that continously consume the jobs channel, now for the prepartion of jobs
+channel depends upon the buffer of the jobs channel, if we have can preapre any where if not than
+first run the workers (helps in maintainng the backpressue)
+talking about the context signal, we need to derive the child's context from parent
+and use the cancel signal
+*
+*/
 type Job[T any] struct {
-	val   T
+	task  T
 	index int
 }
 
-func WorkerPool[T any, R any](ctx context.Context, worker int, items []T, fn func(context.Context, T) (R, error)) ([]R, error) {
+func WorkerPool[T, R any](ctx context.Context, n int, items []T, fn func(context.Context, T) (R, error)) ([]R, error) {
+	if n < 1 {
+		n = 1
+	}
 	results := make([]R, len(items))
-	jobs := make(chan Job[T], len(items))
-	var (
-		wg         sync.WaitGroup
-		once       sync.Once
-		firstError error
-	)
+	jobs := make(chan Job[T])
+	var firstError error
+	var once sync.Once
+	var wg sync.WaitGroup
+	childctx, cancel := context.WithCancel(ctx) // creating the child context
+	defer cancel()                              // frees childctx on return; cancellation only flows parent to child
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel() // needs to cancel our child's context
-	for range worker {
-		if ctx.Err() != nil {
-			break
-		}
+	for range n {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-
 			for job := range jobs {
-				if ctx.Err() != nil {
+				if childctx.Err() != nil {
 					return
 				}
-				result, err := fn(ctx, job.val)
+				result, err := func() (r R, err error) {
+					defer func() {
+						if p := recover(); p != nil {
+							err = fmt.Errorf("panic in task %d: %v", job.index, p)
+						}
+					}()
+					return fn(childctx, job.task)
+				}()
 				if err != nil {
 					once.Do(func() {
 						firstError = err
@@ -44,17 +58,25 @@ func WorkerPool[T any, R any](ctx context.Context, worker int, items []T, fn fun
 				results[job.index] = result
 			}
 		}()
+
 	}
 
-	for i, item := range items {
-		jobs <- Job[T]{val: item, index: i}
+produce:
+	for idx, val := range items {
+		select {
+		case jobs <- Job[T]{task: val, index: idx}:
+		case <-childctx.Done():
+			break produce // a bare break would only exit the select
+		}
 	}
 	close(jobs)
-
 	wg.Wait()
 
 	if firstError != nil {
-		return results, firstError
+		return nil, firstError
 	}
-	return results, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
