@@ -4,97 +4,86 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 )
 
-// Pipeline: generate -> square (fan-out to N workers) -> merge (fan-in) -> print
-// Rules: every stage owns its output channel, closes it when done, and stops on ctx.Done().
+/*
+input data -> source channel (generator)
+-> fan-out : N worker goroutines read form the channel
+-> each worker pushes its result to an output channel
+-> fan-in : merge the worker outputs into one channel
+-> consumer reads the merged channel and collects result in one slice
+**/
 
-// Stage 1: source. Emits values, then closes.
-func generate(ctx context.Context, nums ...int) <-chan int {
-	out := make(chan int)
+func generator(ctx context.Context, input []int) <-chan int {
+	in := make(chan int)
 	go func() {
-		defer close(out)
-		for _, n := range nums {
+		defer close(in)
+		for _, val := range input {
 			select {
-			case out <- n:
 			case <-ctx.Done():
 				return
+			case in <- val:
 			}
 		}
 	}()
-	return out
+	return in
 }
 
-// Stage 2: processing. Reads from in, writes processed values to out.
-func square(ctx context.Context, in <-chan int) <-chan int {
-	out := make(chan int)
+func worker(ctx context.Context, in <-chan int) <-chan int {
+	output := make(chan int)
 	go func() {
-		defer close(out)
-		for n := range in {
-			time.Sleep(100 * time.Millisecond) // simulate slow work
+		defer close(output)
+		for val := range in {
+			result := val * val
 			select {
-			case out <- n * n:
 			case <-ctx.Done():
 				return
+			case output <- result:
 			}
 		}
 	}()
-	return out
+	return output
 }
 
-// Fan-out: start `workers` copies of the stage, all reading the SAME input channel.
-// Each value is picked up by exactly one worker.
-func fanOut(ctx context.Context, in <-chan int, workers int) []<-chan int {
-	outs := make([]<-chan int, workers)
-	for i := 0; i < workers; i++ {
-		outs[i] = square(ctx, in)
-	}
-	return outs
-}
-
-// Fan-in: merge many channels into one. Close the merged channel only after
-// ALL inputs are drained (WaitGroup).
-func fanIn(ctx context.Context, chans ...<-chan int) <-chan int {
-	out := make(chan int)
+func fanIn(ctx context.Context, inputs ...<-chan int) <-chan int {
+	output := make(chan int)
 	var wg sync.WaitGroup
-	wg.Add(len(chans))
-
-	for _, c := range chans {
-		go func(c <-chan int) {
+	wg.Add(len(inputs))
+	for _, ch := range inputs {
+		go func() {
 			defer wg.Done()
-			for v := range c {
+			for val := range ch {
 				select {
-				case out <- v:
 				case <-ctx.Done():
 					return
+				case output <- val:
 				}
 			}
-		}(c)
+		}()
 	}
-
 	go func() {
 		wg.Wait()
-		close(out)
+		close(output)
 	}()
-	return out
+	return output
 }
-
+func fanOut(ctx context.Context, input <-chan int, n int) []<-chan int {
+	workers := make([]<-chan int, 0, n)
+	for range n {
+		workers = append(workers, worker(ctx, input))
+	}
+	return workers
+}
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel() // stops all goroutines if we exit early
-
-	start := time.Now()
-
-	src := generate(ctx, 1, 2, 3, 4, 5, 6, 7, 8)
-	workers := fanOut(ctx, src, 4)
-	merged := fanIn(ctx, workers...)
-
-	sum := 0
+	defer cancel()
+	data := []int{1, 2, 3, 4, 4}
+	src := generator(ctx, data)
+	merged := fanIn(ctx, fanOut(ctx, src, 3)...)
+	var result []int
 	for v := range merged {
-		fmt.Println("result:", v) // order is NOT guaranteed
-		sum += v
+		result = append(result, v)
 	}
+	fmt.Println(result)
 
-	fmt.Println("sum:", sum, "took:", time.Since(start).Round(100*time.Millisecond))
 }
