@@ -1,101 +1,105 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 )
 
-// create a map of capacity c if it increased remove the least recent used one
-// IDEA : maintain a map for the search loop up in O(1), use the doubly linked list for deletion in O(1)
-// cache struct will maintain the 2 pointers, tail and head representing mru and the lru cache
-// if a cache is access move it forward means adding to the tail resulting in the head as the lru cache
+// LRU cache : just hashmap with capacity, when it's exceeded remove the least used values
+// Implementation Idea : just use the map for the quick lookup, but we need to remove the stale
+// entry too in O(1) when capacity exceeded. for that we'll use DLL supports deletion
+// in constant. so, when the data accessed dll will push that node to front. that way
+// stale node is always in the head side.
+// while removing the node : linked list node should have key to access the map's stale pair
+// cache has to maintain tail and head representing the MRU and the LRU
 
-type Node struct {
-	next *Node
-	prev *Node
-	val  string
+var ErrNotFound = errors.New("key not found")
+
+type linkedList struct {
+	val  int
+	next *linkedList
+	prev *linkedList
 	key  int
 }
 
-func NewNode(val string) *Node {
-	return &Node{
-		next: nil,
-		prev: nil,
-		val:  val,
+func newLinkedList(val, key int) *linkedList {
+	return &linkedList{
+		val: val,
+		key: key,
 	}
 }
 
 type LruCache struct {
-	head     *Node
-	tail     *Node
-	cache    map[int]*Node
 	mu       sync.Mutex
+	cacheMap map[int]*linkedList
 	capacity int
+	tail     *linkedList
+	head     *linkedList
 }
 
 func NewLruCache(capacity int) *LruCache {
-	lru := &LruCache{
-		head:     NewNode(""),
-		tail:     NewNode(""),
-		cache:    make(map[int]*Node),
+	lrucache := LruCache{
 		capacity: capacity,
+		tail:     newLinkedList(0, 0),
+		head:     newLinkedList(0, 0),
+		cacheMap: map[int]*linkedList{},
 	}
-	lru.head.next = lru.tail
-	lru.tail.prev = lru.head
-	return lru
+	lrucache.tail.prev = lrucache.head
+	lrucache.head.next = lrucache.tail
+	return &lrucache
 }
 
-func unlink(node *Node) {
-	node.next.prev = node.prev
+// delete the node
+func deleteNode(node *linkedList) {
 	node.prev.next = node.next
+	node.next.prev = node.prev
 }
 
-// adding the node the tail
-func (lru *LruCache) AddForward(node *Node) {
+// add to the front
+func (lru *LruCache) addFront(node *linkedList) {
 	node.prev = lru.tail.prev
 	node.next = lru.tail
 	lru.tail.prev.next = node
 	lru.tail.prev = node
 }
 
-func (lru *LruCache) PushForward(node *Node) {
-	unlink(node)
-	lru.AddForward(node)
+// push node forward = remove from the current pos + add to the front
+func (lru *LruCache) pushForward(node *linkedList) {
+	deleteNode(node)
+	lru.addFront(node)
 }
 
-// get the cache val = move node to forward
-func (lru *LruCache) get(key int) (string, error) {
+// access cache = get operation + push that node forward
+func (lru *LruCache) get(key int) (int, error) {
 	lru.mu.Lock()
 	defer lru.mu.Unlock()
-	node, exists := lru.cache[key]
-	if exists {
-		lru.PushForward(node)
-		return node.val, nil
-	} else {
-		return "", fmt.Errorf("value not found")
+	node, ok := lru.cacheMap[key]
+	if !ok {
+		return 0, ErrNotFound
 	}
+	lru.pushForward(node)
+	return node.val, nil
 }
 
-// update the cache val = add node to the forward , if capacity crossed delete the head
-func (lru *LruCache) add(key int, val string) bool {
+// add or update cache
+func (lru *LruCache) put(key, val int) {
+	lru.mu.Lock()
+	defer lru.mu.Unlock()
 	if lru.capacity <= 0 {
-		return false
+		return
 	}
-	lru.mu.Lock()
-	defer lru.mu.Unlock()
-	if node, exists := lru.cache[key]; exists {
+	if node, ok := lru.cacheMap[key]; ok {
 		node.val = val
-		lru.PushForward(node)
-		return true
+		lru.pushForward(node)
+		return
 	}
-	node := NewNode(val)
-	node.key = key
-	lru.cache[key] = node
-	lru.AddForward(node)
-	if len(lru.cache) > lru.capacity {
+	newNode := newLinkedList(val, key)
+	lru.cacheMap[key] = newNode
+	lru.addFront(newNode)
+	// if cap exceeded
+	if len(lru.cacheMap) > lru.capacity {
 		lruNode := lru.head.next
-		unlink(lruNode)
-		delete(lru.cache, lruNode.key) // remove from the map
+		delete(lru.cacheMap, lruNode.key)
+		deleteNode(lruNode)
 	}
-	return true
 }
