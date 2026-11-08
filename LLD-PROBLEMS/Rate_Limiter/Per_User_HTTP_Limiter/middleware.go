@@ -2,48 +2,52 @@ package main
 
 import (
 	"net/http"
-	"strconv"
 	"sync"
 )
 
-type Limiter struct {
-	limitMap map[int]*TokenBucket
-	mu       *sync.Mutex
+/*
+1. create the rate limiter : usage registry
+2. define method reciver : allowing an ID to proceed
+*/
+
+type RateLimiter struct {
+	registry map[string]*TokenBucket
+	mu       sync.Mutex
 }
 
-func NewLimiter() *Limiter {
-	return &Limiter{
-		mu:       &sync.Mutex{},
-		limitMap: make(map[int]*TokenBucket),
+func NewRateLimiter() *RateLimiter {
+	return &RateLimiter{
+		registry: map[string]*TokenBucket{},
+		mu:       sync.Mutex{},
 	}
 }
 
-func (limiter *Limiter) Middleware(next http.Handler) http.Handler {
+// it'll accept the handler function and return the handler function only
+// let's we are extracting ID from the and do the map lookup
+// if the shit not exists than create one and call the allow method
+func (rt *RateLimiter) RateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rawUserID := r.Header.Get("X-User-ID")
-		if rawUserID == "" {
-			http.Error(w, "X-User-ID header is required", http.StatusBadRequest)
+		userId := r.Header.Get("User-ID")
+		if userId == "" {
+			http.Error(w, "missing id", http.StatusUnauthorized)
 			return
 		}
-		userId, err := strconv.Atoi(rawUserID)
-		if err != nil {
-			http.Error(w, "X-User-ID must be an integer", http.StatusBadRequest)
-			return
-		}
-		if !limiter.RateLimit(userId) {
-			http.Error(w, "Too many requests", http.StatusTooManyRequests)
-			return
+		tb := rt.getBucket(userId)
+		if !tb.Allow() {
+			http.Error(w, "asdf", http.StatusTooManyRequests)
 		}
 		next.ServeHTTP(w, r)
 	})
 }
-func (limiter *Limiter) RateLimit(userId int) bool {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	val, ok := limiter.limitMap[userId]
-	if !ok {
-		limiter.limitMap[userId] = NewTokenBucket(3, 2)
-		val = limiter.limitMap[userId]
+
+func (rt *RateLimiter) getBucket(id string) *TokenBucket {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	val, ok := rt.registry[id]
+	if ok {
+		return val
 	}
-	return val.Allow()
+	tb := NewTokenBucket(3, 2)
+	rt.registry[id] = tb
+	return tb
 }

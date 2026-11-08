@@ -82,7 +82,7 @@ func (lru *LruCache) get(key int) (int, error) {
 }
 
 // add or update cache
-func (lru *LruCache) put(key, val int) {
+func (lru *LruCache) add(key, val int) {
 	lru.mu.Lock()
 	defer lru.mu.Unlock()
 	if lru.capacity <= 0 {

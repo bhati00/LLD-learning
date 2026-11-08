@@ -5,40 +5,44 @@ import (
 	"time"
 )
 
+/*
+ */
+
 type TokenBucket struct {
-	mu         sync.Mutex
-	capacity   float64
-	rate       float64
-	tokens     float64
-	lastRefill time.Time
+	burst       float64
+	rate        float64
+	current     float64
+	lastAccrued time.Time
+	mu          sync.Mutex
 }
 
-func NewTokenBucket(capacity float64, rate float64) *TokenBucket {
+func NewTokenBucket(burst float64, rate float64) *TokenBucket {
 	return &TokenBucket{
-		mu:         sync.Mutex{},
-		capacity:   capacity,
-		rate:       rate,
-		lastRefill: time.Now(),
-		tokens:     capacity,
+		burst:       burst,
+		rate:        rate,
+		current:     burst,
+		lastAccrued: time.Now(),
+		mu:          sync.Mutex{},
 	}
 }
 
+// it'll first update the balance based upon the formula = min(burst, current + earned)
+// where earned = accural duration * rate
+// accural duration = curr time - last accured at
 func (tb *TokenBucket) Allow() bool {
 	tb.mu.Lock()
 	defer tb.mu.Unlock()
-
-	// lapsed time
-	now := time.Now()
-	lapsedTime := now.Sub(tb.lastRefill).Seconds()
-
-	// refill tokens
-	tb.tokens = min(tb.capacity, tb.tokens+lapsedTime*tb.rate)
-	tb.lastRefill = now
-
-	if tb.tokens >= 1 {
-		tb.tokens--
+	refill(tb)
+	if tb.current >= 1 {
+		tb.current -= 1
 		return true
 	}
 	return false
+}
 
+func refill(tb *TokenBucket) {
+	now := time.Now()
+	elapsed := now.Sub(tb.lastAccrued).Seconds()
+	tb.current = min(tb.burst, elapsed*tb.rate+tb.current)
+	tb.lastAccrued = now
 }

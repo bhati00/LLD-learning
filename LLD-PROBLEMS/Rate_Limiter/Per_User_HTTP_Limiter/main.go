@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,56 +10,53 @@ import (
 	"time"
 )
 
+/*
+APPROACH
+1. create the server
+2. use the token bucker or create the one
+3. Create the middleware and use that tokenbucket
+4. use the middlewares in the handlers
+*/
+/*
+SERVER GRACEFUL SHUTDOWN :
+1. create the multiplexer & registers our handlers
+2. create the http struct
+2. create the channel of OS type and that starts listening the SIGTERM
+4. create the context backgroud with the grace period  let the server to pass it
+5. listern for the graceful shutdown
+*/
 func main() {
-	limiter := NewLimiter()
+	limiter := NewRateLimiter()
 	mux := http.NewServeMux()
-	helloHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "hey i was called :)")
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(5 * time.Second)
+		w.Write([]byte("hello " + r.Header.Get("User-ID") + "\n"))
 	})
-
-	mux.Handle("/hello", limiter.Middleware(helloHandler))
-
-	// configure the server
-	server := http.Server{
+	server := &http.Server{
 		Addr:    ":8080",
-		Handler: mux,
+		Handler: limiter.RateLimit(mux),
 	}
+	serverErr := make(chan error, 1)
+	quit := make(chan os.Signal, 1)
 
-	// singals and error
-	stopCh := make(chan os.Signal, 1)
-	errorCh := make(chan error, 1)
-	signal.Notify(stopCh, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(stopCh)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	// running server
 	go func() {
-		log.Print("Starting HTTP server at http://localhost:8080; press Ctrl+C to shut down")
-		errorCh <- server.ListenAndServe()
+		serverErr <- server.ListenAndServe()
 	}()
 
 	select {
-	case err := <-errorCh:
-		if !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("HTTP server failed: %v", err)
-		}
-		return
-	case <-stopCh:
-		log.Print("Shutdown requested; waiting for active requests")
+	case err := <-serverErr:
+		log.Fatalf("server failed to start or crashed: %v", err)
+	case sig := <-quit:
+		log.Printf("received signal %v, shutting down", sig)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("Graceful shutdown failed: %v", err)
-		if closeErr := server.Close(); closeErr != nil {
-			log.Printf("Unable to close HTTP server: %v", closeErr)
-		}
-	} else {
-		log.Print("Graceful shutdown complete")
+		log.Printf("graceful shutdown failed: %v, forcing close", err)
+		server.Close()
 	}
-
-	if err := <-errorCh; !errors.Is(err, http.ErrServerClosed) {
-		log.Printf("HTTP server failed: %v", err)
-	}
+	log.Println("server stopped")
 }
