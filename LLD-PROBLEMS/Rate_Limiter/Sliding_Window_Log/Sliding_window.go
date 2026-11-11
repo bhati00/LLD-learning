@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+/*
+Core Idea : maintain a slice of time logs of last duration
+on every call remove the expired logs and make sure we still have space
+before entering the log
+*/
 type SlidingWindow struct {
 	capacity       int
 	mu             sync.Mutex
