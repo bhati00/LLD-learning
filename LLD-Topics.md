@@ -34,5 +34,5 @@
 | LLD Problems | Library Management System | |
 | LLD Problems | Ticket Booking System | |
 | LLD Problems | ATM System | |
-| LLD Problems | Circuit Breaker | |
+| LLD Problems | [Circuit Breaker](Circuit_Breaker/01-Circuit-Breaker.md) | |
 | LLD Problems | Chess / Snake and Ladder | |
