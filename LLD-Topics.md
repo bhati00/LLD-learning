@@ -29,7 +29,7 @@
 | LLD Problems | Parking Lot | |
 | LLD Problems | Splitwise | |
 | LLD Problems | Vending Machine | |
-| LLD Problems | Notification Service | |
+| LLD Problems | [Notification Service](Notification_Service/01-Notification-Service.md) | |
 | LLD Problems | Elevator System | |
 | LLD Problems | Library Management System | |
 | LLD Problems | Ticket Booking System | |
