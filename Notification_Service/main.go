@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	ns := NewNotificationService()
+	ns := NewNotificationService(3, 10)
 	ns.AddUser(Recipient{
 		id:          1,
 		name:        "lalu",
@@ -24,8 +24,11 @@ func main() {
 	ns.RegisterChannel(ChannelSMS, &SMS{})
 	ns.RegisterChannel(ChannelSlack, &Slack{})
 	ns.RegisterChannel(ChannelEmail, &Email{})
+	ns.Start()
+	defer ns.Stop()
+
 	n := Notification{
-		userIDs:     []int{1, 2, 3}, // 3 does not exist, so it should fail
+		userIDs:     []int{1, 2},
 		messageType: Alert,
 		priority:    High,
 		channels:    []ChannelType{ChannelSMS, ChannelEmail, ChannelSlack},
@@ -35,7 +38,8 @@ func main() {
 	results := ns.Send(context.Background(), n)
 
 	fmt.Println("\n--- results ---")
-	for _, r := range results {
+	for i := 0; i < len(n.userIDs)*len(n.channels); i++ {
+		r := <-results
 		status := "ok"
 		if r.err != nil {
 			status = "failed: " + r.err.Error()

@@ -1,170 +1,276 @@
-# Notification Service: Requirements
+# Notification Service: Design and Interview Follow-ups
 
 [Back to LLD topics](../LLD-Topics.md)
 
-**Goal:** brainstorm the design yourself, then implement it in Go. This doc only lists *what* to build, not *how*.
+**Target:** 3-4 YOE Go developer. Goal: build a clean core in 30-40 minutes, then handle the follow-ups by explaining or sketching them.
 
 ---
 
-## 1. Problem Statement
+## 1. The Problem
 
-Build a service that sends notifications to users over multiple channels (Email, SMS, Push, and so on). It must be easy to extend, reliable under provider failures, and must respect user preferences.
-
----
-
-## 2. Functional Requirements (FR)
-
-### Core
-- [ ] **FR1:** Send a notification to a user on a given channel (Email, SMS, Push).
-- [ ] **FR2:** Send one notification to multiple channels at once.
-- [ ] **FR3:** Adding a new channel (e.g. Slack, WhatsApp) must not require modifying existing code.
-- [ ] **FR4:** Each notification has a type (OTP, Transactional, Marketing, Alert) and a priority (High, Medium, Low).
-
-### Templates *(optional, see Section 9)*
-- [ ] **FR5 (optional):** Support message templates with variables, e.g. `Hi {{name}}, your OTP is {{otp}}`.
-- [ ] **FR6 (optional):** A template can have a different body per channel (short for SMS, rich for Email).
-
-### User preferences
-- [ ] **FR7:** A user can opt in or out per channel (e.g. no SMS).
-- [ ] **FR8:** A user can opt in or out per notification type (e.g. no Marketing).
-- [ ] **FR9:** Critical types (OTP, security alerts) must bypass opt-out.
-- [ ] **FR10:** Quiet hours: non-critical notifications are held or dropped during them *(stretch)*.
-
-### Delivery
-- [ ] **FR11:** Failed sends are retried with backoff, up to a max attempt count.
-- [ ] **FR12:** If a channel keeps failing, fall back to another channel (e.g. Push fails, so send SMS).
-- [ ] **FR13:** Higher-priority notifications are delivered before lower-priority ones.
-- [ ] **FR14:** Support scheduled notifications (send at time T) *(stretch)*.
-
-### Tracking
-- [ ] **FR15:** Track each notification's status: `Pending → Queued → Sent → Delivered / Failed`.
-- [ ] **FR16:** Query the status and history of a notification by ID.
+Build a service that sends a message to users over multiple channels (Email, SMS, Slack, Push). It must be easy to extend, must not block callers on slow providers, and must survive provider failures.
 
 ---
 
-## 3. Non-Functional Requirements (NFR)
+## 2. Requirements to Clarify First
 
-### Performance and scalability
-- [ ] **NFR1:** `Send()` must be **non-blocking** for the caller. A slow provider must not slow the API.
-- [ ] **NFR2:** Bounded concurrency: a fixed number of workers, not unlimited goroutines.
-- [ ] **NFR3:** Bounded queue with a defined **backpressure** behavior when full (block, reject, or drop low priority).
+Ask these before drawing anything. The answers set your scope.
 
-### Reliability
-- [ ] **NFR4:** **Idempotency:** the same request (same idempotency key) must never send twice.
-- [ ] **NFR5:** One failing channel or provider must not affect the others (**isolation**).
-- [ ] **NFR6:** **Circuit breaker** per provider, to stop hammering a dead one.
-- [ ] **NFR7:** **Rate limit** per user (anti-spam) and per provider (respect provider quotas).
-- [ ] **NFR8:** **Graceful shutdown:** stop accepting new work, drain in-flight work, and honor `context` cancellation.
-- [ ] **NFR9:** Delivery guarantee: decide **at-least-once** or **at-most-once** and justify it.
+| Question | Why it matters |
+|---|---|
+| Which channels, and will more be added? | Drives the `Channel` interface (Strategy, OCP). |
+| One user or many per request? Which channels per request? | Fan-out shape: user × channel. |
+| Must `Send` return immediately? | Decides sync vs async (worker pool). |
+| Do we need to know if it was delivered? | Results, status tracking. |
+| Failures: retry, fall back, or drop? | Retry and fallback follow-ups. |
+| User preferences / opt-out? Critical messages (OTP)? | Preference filter, bypass rule. |
+| Priorities? | Queue design. |
+| Scale: in-memory or distributed? | Decides if Kafka/SQS/DB are in scope. |
 
-### Design quality
-- [ ] **NFR10:** **Extensible** (OCP): new channels, templates, or filters don't change the core.
-- [ ] **NFR11:** **Testable:** all providers are behind interfaces, so tests use fakes with no real network.
-- [ ] **NFR12:** **Thread-safe:** safe under concurrent callers (`go test -race` passes).
-- [ ] **NFR13:** **Configurable** (workers, retries, queue size) via functional options.
-- [ ] **NFR14:** **Observable:** log or count sent/failed/retried per channel.
+### Scope split
 
----
-
-## 4. Out of Scope
-
-- Real provider integrations (SMTP, Twilio, FCM). Use fake senders that sleep or randomly fail.
-- Persistent storage. In-memory is fine.
-- Auth, UI, and an HTTP API (optional at the end).
+| Level | Items |
+|---|---|
+| **Build (core)** | Models, `Channel` interface + implementations, service that fans out, async worker pool, bounded queue, graceful shutdown. |
+| **Sketch if asked** | Retry with backoff, user preferences, priority, fallback channel. |
+| **Just explain** | Idempotency, status tracking, circuit breaker, rate limiting, templates, scaling out. |
 
 ---
 
-## 5. Questions to Brainstorm
+## 3. What We Built
 
-Answer these *before* writing code.
-
-**Modeling**
-1. What are the core entities? (Notification, Channel, Template, User, Preference, ...)
-2. What does the `Channel` interface look like? What is the smallest useful one?
-3. Who decides which channels a notification goes to: the caller, or the service based on preferences?
-
-**Flow**
-4. Draw the pipeline from `Send()` to delivered. Which steps happen *before* the queue and which *after*?
-5. Where do the preference check, dedup, and rate limit sit, and in what order? Why that order?
-6. Is the preference check synchronous or in the worker? What are the trade-offs?
-
-**Concurrency**
-7. One queue or a queue per priority? How do you stop Low starving behind High?
-8. What happens when the queue is full?
-9. How do you shut down without losing queued work?
-
-**Reliability**
-10. Which errors are retryable (timeout) and which are not (invalid phone number)?
-11. How do retry and circuit breaker interact? Does retry wrap the breaker or the reverse?
-12. How do you generate the idempotency key, and how long do you remember it?
-13. What if a send succeeds but the status update fails?
-
-**Extensibility**
-14. How do you add a Slack channel? Count the files you touch. The answer should be 1 or 2.
-15. How would you swap in-memory storage for a DB later?
-
----
-
-## 6. Suggested Build Order
-
-1. **Core:** `Notification`, `Channel` interface, Email/SMS/Push fakes, registry or factory, synchronous send.
-2. **Preferences:** a preference filter (templates are optional, see Section 9).
-3. **Async:** queue plus worker pool, priority handling, and graceful shutdown.
-4. **Reliability:** retry with backoff, fallback, idempotency.
-5. **Resilience:** circuit breaker and rate limiter (reuse your existing ones).
-6. **Tracking and tests:** status store, fake channels, `go test -race`.
-
----
-
-## 7. Patterns to Consider (no spoilers)
-
-You've already covered most of these. Decide where each one fits:
-
-Strategy, Factory, Observer, Decorator, Chain of Responsibility, State, Functional Options, Worker Pool, Circuit Breaker, Rate Limiter.
-
----
-
-## 8. Done Checklist
-
-- [ ] A new channel was added by touching at most 2 files.
-- [ ] Opted-out users never receive non-critical messages.
-- [ ] Killing a provider (always fails) doesn't block or crash other channels.
-- [ ] The same idempotency key sent twice delivers once.
-- [ ] `go test -race ./...` passes.
-- [ ] Shutdown drains the queue without goroutine leaks.
-- [ ] I can explain every design decision and its trade-off out loud.
-
----
-
-## 9. Optional: Templates (FR5, FR6)
-
-Too deep for a typical 45-60 minute interview. In the interview, `Notification` carries a plain `subject` and `body`, and you say in one sentence: "Templates would be a per-channel body with variable substitution, behind a small `Renderer` interface." Build this only after the core is done.
-
-**Model**
+### Entities (`model.go`)
 
 | Type | Purpose |
 |---|---|
-| `ChannelTemplate` | Raw text for one channel: `subject` (email only) and `body`. |
-| `Template` | An `id` plus `variants map[ChannelType]ChannelTemplate`: one logical message, one variant per channel. |
-| `Content` | The rendered output (`subject`, `body`), passed to `Channel.Send`. |
+| `Notification` | The request: `userIDs`, `messageType`, `priority`, `channels`, `subject`, `body`. Holds user **IDs**, not contact details. |
+| `Recipient` | A user's contact details (`email`, `phone`, `slackHandle`). Each channel reads the field it needs. |
+| `ChannelType` | Enum: SMS, Email, Slack. The key for the channel map. |
+| `Priority`, `MessageType` | Enums, declared for priority and preferences (not used by the core yet). |
+| `Result` | Outcome of one (user, channel) delivery. |
 
-`Notification` would then hold `templateID string` and `data map[string]any` instead of `subject` and `body`. The same `data` is used by every channel variant.
+### The `Channel` interface (`channel.go`)
 
-**Example**
 ```go
-Template{
-    id: "otp",
-    variants: map[ChannelType]ChannelTemplate{
-        ChannelSMS:   {body: "Your OTP is {{.otp}}"},
-        ChannelEmail: {subject: "Verify login", body: "Hi {{.name}}, your OTP is {{.otp}}"},
-    },
+type Channel interface {
+    send(ctx context.Context, recipient Recipient, subject, body string) error
 }
 ```
 
-**Flow:** `Service.Send` loads the template by ID, calls `Render(channel, data)` (use `text/template`), and passes the resulting `Content` to the channel. Return an error if the template has no variant for that channel.
+One method. `SMS`, `Email` and `Slack` implement it (Strategy). Adding WhatsApp means one new file and one `RegisterChannel` call. The service doesn't change (OCP).
 
-**Questions to brainstorm**
-1. What happens when a variant is missing for a channel: error, skip, or fall back to a default?
-2. What happens when `data` is missing a variable the template uses?
-3. Where does the template store live, and how does it stay swappable?
-4. Should the channel format the text (SMS truncation, Slack blocks) or only the template?
+### The service (`service.go`)
+
+```mermaid
+flowchart LR
+    C[Caller] -->|Send| S[Send: build one delivery per user x channel]
+    S -->|non-blocking enqueue| Q[(jobs: buffered channel)]
+    Q --> W1[worker 1]
+    Q --> W2[worker 2]
+    Q --> W3[worker N]
+    W1 & W2 & W3 -->|channel.send| CH[Email / SMS / Slack]
+    W1 & W2 & W3 -->|Result| R[(results: buffered channel)]
+    R --> C
+```
+
+| Part | What it does |
+|---|---|
+| `NewNotificationService(workers, queueSize)` | Creates the maps and the bounded `jobs` channel. |
+| `RegisterChannel`, `AddUser` | Fill the channel and user maps. Call them **before** `Start`. |
+| `Start()` | Launches N workers. `wg.Add(1)` goes **before** each `go`. |
+| `worker()` | `for d := range jobs`: skip if the delivery's `ctx` is cancelled, otherwise `channel.send`, then write a `Result`. |
+| `Send(ctx, n)` | One `delivery` per user × channel, enqueued with a **non-blocking** `select`. Returns a buffered results channel. |
+| `Stop()` | `sync.Once` closes `jobs`, then `wg.Wait()` so the workers drain the queue. |
+
+### Files
+
+```
+model.go     entities and enums
+channel.go   Channel interface
+sms.go, email.go, slack.go   implementations (fakes that print)
+service.go   pool, queue, Send, Stop
+main.go      demo
+```
+
+---
+
+## 4. Key Decisions and Why
+
+| Decision | Reason |
+|---|---|
+| **The unit of work is one delivery** (user × channel), not a whole notification. | A failed SMS can be retried alone. One slow channel doesn't hold up the others. |
+| **Worker pool, not a semaphore.** | The service is long-lived with a queue. We need backpressure, priority, retry and drain-on-shutdown, all of which need a queue we control. A semaphore fits a one-shot "run this batch and wait" job. See [Worker Pool](../DESIGN-PATTERNS/10-Worker-Pool.md). |
+| **One pool owned by the service**, created once in `main` and passed around. | One bounded set of workers however many callers there are. No singleton: a global makes tests share state. |
+| **Bounded queue with a non-blocking enqueue.** | `Send` never blocks the caller. A full queue becomes an explicit `ErrQueueFull` result (backpressure), not unbounded memory. |
+| **`ctx` stored in each `delivery`.** | The job runs after `Send` returns, so the request's context has to travel with it. Cancelling a request skips its queued deliveries. |
+| **Results channel is buffered to the call's size.** | Workers never block on it, even if the caller ignores it. No leaked goroutines. |
+| **Close the queue, then wait.** | Closing makes each worker's `range` end after the buffer is drained, so queued work isn't lost. |
+| **Interfaces for `Channel`.** | Tests use fakes. No real network. |
+
+---
+
+## 5. Concurrency Points Interviewers Dig Into
+
+**`wg.Add` before `go`.** If `Add` ran inside the goroutine, `Stop` could call `wg.Wait()` before the goroutine was scheduled and return early.
+
+**Who closes what.** The service closes `jobs` (the only sender side that knows when it's done). Workers never close anything. Closing from many writers panics.
+
+**Order in `Stop`.** Close first, then `Wait`. `Wait` before `close` deadlocks, since the workers never exit.
+
+**Send after Stop panics** (a send on a closed channel). A guard is a `stopped` flag under an `RWMutex`: `Send` takes `RLock` and returns an error if stopped, and `Stop` takes the write lock to set the flag and close.
+
+**Shared maps.** Workers and `Send` read `users` and `channels` concurrently. That's safe only because they're written before `Start`. If they must change at runtime, guard them with an `RWMutex`, or use an immutable snapshot.
+
+**Backpressure options.** Block, reject (what we do), or drop the lowest priority. Say which fits which message: reject or block for an OTP, drop for marketing.
+
+---
+
+## 6. Follow-ups (the part that gets scored)
+
+### 6.1 Retry with backoff (most likely follow-up)
+
+Retry **one delivery**, not the whole request, with exponential backoff and jitter:
+
+```
+delay = min(base * 2^attempt, max) + random jitter
+```
+
+Two ways to place it:
+
+| Approach | How | Trade-off |
+|---|---|---|
+| **Decorator** around a `Channel` | `RetryChannel{inner, maxAttempts, base}` implements `Channel` and loops. | Tiny and composable (see [Decorator](../DESIGN-PATTERNS/05-Decorator.md)). But it **holds a worker** while sleeping. |
+| **Re-enqueue** the delivery with a `notBefore` time | A worker puts it back after a delay (or a timer does). | Doesn't block workers, but needs an attempt counter and a delay mechanism. |
+
+Rules to state:
+- **Retry only transient errors** (timeout, 5xx, rate limited). Never invalid phone number or bad request.
+- **Cap attempts**, then give up (dead-letter or report failure).
+- **Jitter** so many failures don't all retry at the same moment (retry storm).
+- **Respect `ctx`**: stop sleeping when it's cancelled.
+- Retries go **through** a circuit breaker, so an open breaker stops the storm.
+- Retrying a send that may have succeeded creates **duplicates**, so retry needs idempotency (6.5).
+
+### 6.2 Priority
+
+Our queue is one FIFO, so an OTP can sit behind 10,000 marketing messages.
+
+| Option | Notes |
+|---|---|
+| **A queue per priority**, workers check High first, then Medium, then Low (nested `select` with `default`). | Simple. Low can **starve** if High never empties. |
+| **Weighted workers** (e.g. 3 workers for High, 1 for Low). | Guarantees some Low throughput. |
+| **Priority heap** with a mutex and `sync.Cond`. | Fine-grained and supports aging, but more code. |
+| **Aging** | Raise a message's priority the longer it waits, to prevent starvation. |
+
+Also: **bypass the shared queue** for critical types, or reserve capacity for them, so a marketing flood can't fill the queue and reject an OTP.
+
+### 6.3 User preferences
+
+A **filter step in `Send`**, before enqueueing, which removes (user, channel) pairs the user opted out of. Shape it as a Chain of Responsibility ([notes](../DESIGN-PATTERNS/06-Chain-of-Responsibility.md)): preference check, then dedup, then rate limit, then enqueue.
+
+- Preferences are per **channel** and per **message type**: `map[userID]{channels, types}`.
+- **Critical types (OTP, security alerts) bypass opt-out.**
+- **Quiet hours:** hold non-critical messages until the window ends, or drop them.
+- Filtering before the queue means opted-out sends never use a worker.
+
+### 6.4 Fallback channel
+
+If Push fails after its retries, try SMS. Keep an **ordered channel list per message type** (OTP: SMS, then Email). On final failure of one, enqueue the next as a new delivery. Cap the chain so it can't loop. Say what counts as "failed" (retries exhausted, not a single error).
+
+### 6.5 Idempotency and delivery guarantees
+
+- A client retrying `Send`, or a worker retrying after a timeout, can **duplicate** a message. For an OTP that's bad.
+- Use an **idempotency key** (client-supplied, or `notificationID + userID + channel`). Keep a `seen` set with a **TTL**, and drop a delivery whose key has been seen.
+- **Check-then-send is a race**: use an atomic `SetIfAbsent`.
+- Where to record "seen": before sending gives **at-most-once** (a crash loses the message), after sending gives **at-least-once** (a crash can duplicate). Pick one per message type: at-least-once with idempotency for OTP and transactional, at-most-once for marketing.
+- Our in-memory queue is lost on a crash, so it's effectively at-most-once.
+
+### 6.6 Status tracking
+
+Track `Pending → Queued → Sent → Delivered / Failed` per **(notification ID, user, channel)**, in a store you can query. Needs an ID on `Notification`. This is the [State pattern](../DESIGN-PATTERNS/07-State.md) with a status store. Our `Result` is the in-memory stand-in. Note that "sent" (the provider accepted it) differs from "delivered" (a delivery receipt or webhook arrived later).
+
+### 6.7 Circuit breaker and rate limiting
+
+- **Circuit breaker per provider**, so a dead SMS provider fails fast and doesn't tie up workers. Wrap the channel with it. See [Circuit Breaker](../Circuit_breaker/01-Circuit-Breaker.md).
+- **Per-user rate limit** (anti-spam) and **per-provider rate limit** (respect quotas). See [Rate Limiter](../Rate_Limiter/01-Rate-Limiter.md).
+- **Isolation (bulkhead):** a separate pool or queue per channel, so a slow SMS provider can't starve Email.
+
+### 6.8 Templates
+
+Keep it out of the core: `Notification` has a plain `subject` and `body`. To add templates, introduce a template with a body per channel (SMS short, Email rich) and variables rendered with `text/template`. Render in the service before enqueueing, or in the worker. Questions to expect: what if a channel variant is missing (error, skip, default), and what if a variable is missing. Put it behind a small `Renderer` interface.
+
+### 6.9 Scaling beyond one process
+
+| Concern | Answer |
+|---|---|
+| Queue is lost on crash | A durable queue: Kafka, SQS or RabbitMQ. |
+| Write to DB and enqueue atomically | **Outbox pattern**: write the notification and the outbox row in one transaction, and a relay publishes it. |
+| Poison messages | **Dead-letter queue** after N attempts. |
+| Different load per channel | A topic or queue **per channel and priority**, with separate worker fleets. |
+| Rate limits across replicas | Shared state (Redis) or a per-replica share of the quota. |
+| Duplicate delivery | Idempotent consumers (6.5). |
+
+### 6.10 Is this just Pub/Sub?
+
+Partly. The fan-out from one request to many channels is like [pub/sub](../Pub_Sub/01-Pub-Sub-System.md), and [Observer](../DESIGN-PATTERNS/04-Observer.md) is the same idea. But a notification is **addressed to a specific user** (not broadcast to whoever subscribed), and the service adds retries, idempotency, preferences and tracking that a basic broker doesn't. You can use pub/sub **inside** the service (per-channel topics) or **in front of** it (other systems publish events like `order_placed`, and the service decides who to notify).
+
+---
+
+## 7. Interview Q&A
+
+**Q: Why a worker pool and not a goroutine per message?**
+Unbounded goroutines mean unbounded memory and unbounded load on providers. A pool bounds both, and the queue gives backpressure.
+
+**Q: Why a worker pool and not a semaphore?**
+A semaphore bounds concurrent work but not waiting goroutines, and has no queue to reorder, inspect or drain. We need priority, retry and graceful shutdown.
+
+**Q: How many workers?**
+The work is I/O-bound (waiting on providers), so it's not `GOMAXPROCS`. Tie it to provider limits and latency, and make it configurable.
+
+**Q: What happens when the queue is full?**
+`Send` returns an `ErrQueueFull` result for that delivery. The caller can retry later. Alternatives are block or drop-low-priority.
+
+**Q: How do you add a new channel?**
+Implement `Channel`, call `RegisterChannel`. No change to the service.
+
+**Q: How does shutdown work?**
+Stop accepting sends, close `jobs`, workers drain the buffer and exit, `wg.Wait()` returns. A shutdown deadline would use a context that cancels in-flight sends.
+
+**Q: Why does `Send` take IDs instead of recipients?**
+Callers shouldn't need to know phone numbers or emails. The service resolves them through a user store, which in production is a DB or service call behind an interface.
+
+**Q: How do you test it?**
+Fake channels (count calls, sleep, or fail on demand), `go test -race`, and an injectable clock for backoff. Test that `Send` returns quickly, that `Stop` drains everything, and that a full queue returns `ErrQueueFull`.
+
+**Q: Limitations of what you built?** (say these before they ask)
+- No retry, priority, preferences, fallback or idempotency.
+- The queue is in memory, so it's lost on a crash.
+- No validation: an unregistered channel is a nil dereference in the worker, and an unknown user is an empty recipient.
+- `Send` after `Stop` panics.
+- The results channel isn't closed, so the caller must know how many to read.
+- Maps are written only before `Start`.
+
+---
+
+## 8. Whiteboard Script (2 minutes)
+
+> "A notification is a request to send one message to several users over several channels. I model a `Channel` interface with one method, `send`, and implement Email, SMS and Slack. That's Strategy, and adding a channel doesn't touch the service.
+>
+> The service takes user IDs, resolves them to recipients, and turns the request into one delivery per user and channel. Those go on a bounded queue, and a fixed pool of workers, created once, sends them. `Send` never blocks: it does a non-blocking enqueue and returns a results channel, and a full queue shows up as an explicit error result. Each delivery carries the request's context.
+>
+> Shutdown closes the queue and waits for the workers to drain it. For reliability I'd add retries with exponential backoff and jitter on transient errors only, a circuit breaker per provider, and idempotency keys so a retry can't send an OTP twice. Priority means separate queues so an OTP never waits behind marketing, and preferences are a filter before the queue. To scale out, the queue becomes Kafka or SQS with an outbox and a dead-letter queue."
+
+---
+
+## 9. Checklist
+
+- [ ] Can I explain why the unit of work is one delivery?
+- [ ] Can I explain worker pool vs semaphore for this problem?
+- [ ] Can I explain `wg.Add` before `go`, and close-then-wait in `Stop`?
+- [ ] Can I explain who closes the results channel, and why the workers don't?
+- [ ] Can I describe backpressure and the options when the queue is full?
+- [ ] Can I write a retry wrapper with exponential backoff and jitter?
+- [ ] Can I explain which errors to retry and which not to?
+- [ ] Can I design priority queues and explain starvation?
+- [ ] Can I explain idempotency and at-least-once vs at-most-once?
+- [ ] Can I place the circuit breaker, rate limiter and retry relative to each other?
+- [ ] Can I say what my implementation does **not** do?
