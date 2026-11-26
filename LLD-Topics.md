@@ -23,7 +23,7 @@
 | LLD Problems | Task Management System | |
 | LLD Problems | In-memory LRU Cache | |
 | LLD Problems | [Rate Limiter](LLD-PROBLEMS/Rate_Limiter/01-Rate-Limiter.md) | |
-| LLD Problems | Logger Service | |
+| LLD Problems | [Logger Service](Logger/01-Logger.md) | |
 | LLD Problems | Worker Pool | |
 | LLD Problems | [Pub/Sub System](LLD-PROBLEMS/Pub_Sub/01-Pub-Sub-System.md) | |
 | LLD Problems | Parking Lot | |

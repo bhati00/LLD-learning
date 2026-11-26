@@ -1,0 +1,50 @@
+2026-11-25 17:15:07 [DEBUG] debugging details
+2026-11-25 17:15:07 [INFO] server started
+2026-11-25 17:15:07 [WARN] disk almost full
+2026-11-25 17:15:07 [ERROR] db connection failed
+2026-11-25 17:15:07 [FATAL] cannot continue
+2026-11-25 17:15:07 [INFO] hello from a goroutine
+2026-11-25 17:15:07 [INFO] hello from a goroutine
+2026-11-25 17:15:07 [INFO] hello from a goroutine
+2026-11-25 17:15:07 [INFO] hello from a goroutine
+2026-11-25 17:15:07 [INFO] hello from a goroutine
+{"time":"2026-11-26T11:31:18+05:30","level":"DEBUG","message":"debugging details"}
+{"time":"2026-11-26T11:31:18+05:30","level":"INFO","message":"server started"}
+{"time":"2026-11-26T11:31:18+05:30","level":"WARN","message":"disk almost full"}
+{"time":"2026-11-26T11:31:18+05:30","level":"ERROR","message":"db connection failed"}
+{"time":"2026-11-26T11:31:18+05:30","level":"FATAL","message":"cannot continue"}
+{"time":"2026-11-26T11:31:18+05:30","level":"INFO","message":"hello from a goroutine"}
+{"time":"2026-11-26T11:31:18+05:30","level":"INFO","message":"hello from a goroutine"}
+{"time":"2026-11-26T11:31:18+05:30","level":"INFO","message":"hello from a goroutine"}
+{"time":"2026-11-26T11:31:18+05:30","level":"INFO","message":"hello from a goroutine"}
+{"time":"2026-11-26T11:31:18+05:30","level":"INFO","message":"hello from a goroutine"}
+{"time":"2026-11-26T11:32:06+05:30","level":"DEBUG","message":"debugging details"}
+{"time":"2026-11-26T11:32:06+05:30","level":"INFO","message":"server started"}
+{"time":"2026-11-26T11:32:06+05:30","level":"WARN","message":"disk almost full"}
+{"time":"2026-11-26T11:32:06+05:30","level":"ERROR","message":"db connection failed"}
+{"time":"2026-11-26T11:32:06+05:30","level":"FATAL","message":"cannot continue"}
+{"time":"2026-11-26T11:32:06+05:30","level":"INFO","message":"hello from a goroutine"}
+{"time":"2026-11-26T11:32:06+05:30","level":"INFO","message":"hello from a goroutine"}
+{"time":"2026-11-26T11:32:06+05:30","level":"INFO","message":"hello from a goroutine"}
+{"time":"2026-11-26T11:32:06+05:30","level":"INFO","message":"hello from a goroutine"}
+{"time":"2026-11-26T11:32:06+05:30","level":"INFO","message":"hello from a goroutine"}
+2026-11-26 11:51:53 [DEBUG] debugging details
+2026-11-26 11:51:53 [INFO] server started
+2026-11-26 11:51:53 [WARN] disk almost full
+2026-11-26 11:51:53 [ERROR] db connection failed
+2026-11-26 11:51:53 [FATAL] cannot continue
+2026-11-26 11:51:53 [INFO] hello from a goroutine
+2026-11-26 11:51:53 [INFO] hello from a goroutine
+2026-11-26 11:51:53 [INFO] hello from a goroutine
+2026-11-26 11:51:53 [INFO] hello from a goroutine
+2026-11-26 11:51:53 [INFO] hello from a goroutine
+2026-11-26 12:03:20 [DEBUG] debugging details
+2026-11-26 12:03:20 [INFO] server started
+2026-11-26 12:03:20 [WARN] disk almost full
+2026-11-26 12:03:20 [ERROR] db connection failed
+2026-11-26 12:03:20 [FATAL] cannot continue
+2026-11-26 12:03:20 [INFO] hello from a goroutine
+2026-11-26 12:03:20 [INFO] hello from a goroutine
+2026-11-26 12:03:20 [INFO] hello from a goroutine
+2026-11-26 12:03:20 [INFO] hello from a goroutine
+2026-11-26 12:03:20 [INFO] hello from a goroutine
